@@ -47,24 +47,26 @@ const Icons = {
 export default function App() {
   // --- State ---
   const [password, setPassword] = useState(localStorage.getItem('app_password') || '');
+  const [savePassword, setSavePassword] = useState(!!localStorage.getItem('app_password')); // パスワード保存設定
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [logs, setLogs] = useState<RoutineLog[]>([]);
   
   // Tabs & Navigation
   const [activeTab, setActiveTab] = useState<Tab>(Tab.TRACKER);
-  const [categoryTab, setCategoryTab] = useState<Category>('Morning'); // 初期値は後ほどuseEffectで上書き
+  const [categoryTab, setCategoryTab] = useState<Category>('Morning');
   
   // UI State
   const [focusIndex, setFocusIndex] = useState<number>(0);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null); // 時刻編集中のログID
   
   // History
   const [historySortDesc, setHistorySortDesc] = useState(true);
 
   // Analysis
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isGeneratingEmoji, setIsGeneratingEmoji] = useState<string | null>(null); // ID of routine being generated
+  const [isGeneratingEmoji, setIsGeneratingEmoji] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState("");
   const [analysisPeriod, setAnalysisPeriod] = useState<AnalysisPeriod>(() => (localStorage.getItem('analysis_period') as AnalysisPeriod) || '1W');
   const [selectedAnalysisRoutines, setSelectedAnalysisRoutines] = useState<string[]>(() => {
@@ -89,7 +91,17 @@ export default function App() {
     } catch (e) { console.error(e); }
   }, [password]);
 
-  useEffect(() => { if (password) sync('fetch'); }, [password, sync]);
+  // ログイン処理
+  const handleLogin = () => {
+    if (savePassword) {
+      localStorage.setItem('app_password', password);
+    } else {
+      localStorage.removeItem('app_password');
+    }
+    sync('fetch');
+  };
+
+  useEffect(() => { if (password && savePassword) sync('fetch'); }, []); // 初回ロード時、保存済みなら自動ログイン試行
 
   // --- Initial Time Check ---
   useEffect(() => {
@@ -97,10 +109,8 @@ export default function App() {
     let initialCat: Category = 'Morning';
     if (hour >= 4 && hour < 12) initialCat = 'Morning';
     else if (hour >= 12 && hour < 17) initialCat = 'Afternoon';
-    else initialCat = 'Evening'; // 17:00 - 03:59
-    
+    else initialCat = 'Evening';
     setCategoryTab(initialCat);
-    // localStorage保存はタブ切り替え時のみ行う運用に変更（起動時は時間優先）
   }, []);
 
   // --- Helpers ---
@@ -111,7 +121,6 @@ export default function App() {
   const moveItem = (from: number, to: number) => {
     if (to < 0 || to >= currentCategoryRoutines.length) return;
     
-    // 全体のリストから該当ルーチンを探す
     const fromRoutine = currentCategoryRoutines[from];
     const toRoutine = currentCategoryRoutines[to];
     
@@ -119,15 +128,28 @@ export default function App() {
     const fromIdx = newRoutines.findIndex(r => r.id === fromRoutine.id);
     const toIdx = newRoutines.findIndex(r => r.id === toRoutine.id);
     
-    // 入れ替え
     const [moved] = newRoutines.splice(fromIdx, 1);
     newRoutines.splice(toIdx, 0, moved);
 
-    // Order再番
     const updated = newRoutines.map((r, i) => ({ ...r, order: i }));
     setRoutines(updated);
     setFocusIndex(to);
     sync('save', { r: updated, l: logs });
+  };
+
+  // 時刻更新処理
+  const updateLogTime = (logId: string, newTimeStr: string) => {
+    const targetLog = logs.find(l => l.id === logId);
+    if (!targetLog) return;
+
+    const [hours, minutes] = newTimeStr.split(':').map(Number);
+    const newDate = new Date(targetLog.timestamp);
+    newDate.setHours(hours, minutes);
+
+    const updatedLogs = logs.map(l => l.id === logId ? { ...l, timestamp: newDate.getTime() } : l);
+    setLogs(updatedLogs);
+    setEditingLogId(null);
+    sync('save', { r: routines, l: updatedLogs });
   };
 
   const suggestEmoji = async (routineId: string) => {
@@ -153,10 +175,7 @@ export default function App() {
     let newSelection = selectedAnalysisRoutines.includes(id)
       ? selectedAnalysisRoutines.filter(sid => sid !== id)
       : [...selectedAnalysisRoutines, id];
-    
-    // 誰も選択されていない状態を防ぐ（最低1つ）
     if (newSelection.length === 0) newSelection = [id];
-    
     setSelectedAnalysisRoutines(newSelection);
     localStorage.setItem('analysis_selected_routines', JSON.stringify(newSelection));
   };
@@ -176,8 +195,6 @@ export default function App() {
     if (analysisPeriod === '1Y') startDate.setFullYear(now.getFullYear() - 1);
 
     const filteredLogs = logs.filter(l => l.timestamp >= startDate.getTime());
-    
-    // 日付ごとにグループ化
     const dataMap: {[key: string]: any} = {};
     
     filteredLogs.forEach(l => {
@@ -187,8 +204,6 @@ export default function App() {
       if (!r || !selectedAnalysisRoutines.includes(r.id)) return;
 
       if (!dataMap[dateKey]) dataMap[dateKey] = { name: dateKey, originalDate: d.getTime() };
-      
-      // 時刻を数値化 (例: 14:30 -> 14.5)
       const hours = d.getHours() + d.getMinutes() / 60;
       dataMap[dateKey][r.title] = hours;
     });
@@ -219,8 +234,21 @@ export default function App() {
     <div className="min-h-screen flex items-center justify-center bg-white p-6">
       <div className="w-full max-w-md p-8 text-center">
         <h1 className="text-xl font-bold mb-8 text-slate-800 tracking-widest">DAILY LOG</h1>
-        <Input type="password" placeholder="合言葉" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sync('fetch')} className="mb-4 text-center border-slate-200" />
-        <Button onClick={()=>sync('fetch')} className="w-full h-12 bg-slate-900 text-white">ログイン</Button>
+        <Input type="password" placeholder="合言葉" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()} className="mb-4 text-center border-slate-200" />
+        
+        {/* パスワード保存チェックボックス */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <input 
+            type="checkbox" 
+            id="savePass" 
+            checked={savePassword} 
+            onChange={(e) => setSavePassword(e.target.checked)}
+            className="rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+          />
+          <label htmlFor="savePass" className="text-sm text-slate-600 cursor-pointer select-none">パスワードを保存する</label>
+        </div>
+
+        <Button onClick={handleLogin} className="w-full h-12 bg-slate-900 text-white">ログイン</Button>
       </div>
     </div>
   );
@@ -241,7 +269,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col min-h-0 relative">
-        {/* Header - Remove titles, keep tabs for Tracker/Manage */}
+        {/* Header */}
         <header className="p-4 md:p-6 bg-white z-10">
           <div className="max-w-4xl mx-auto flex justify-between items-center h-10">
             {(activeTab === Tab.TRACKER || activeTab === Tab.MANAGE) ? (
@@ -254,7 +282,6 @@ export default function App() {
               </div>
             ) : <div />}
             
-            {/* Contextual Header Actions */}
             {activeTab === Tab.HISTORY && (
                <button onClick={()=>setHistorySortDesc(!historySortDesc)} className="text-xs font-bold bg-slate-100 px-3 py-1 rounded text-slate-600">
                  並び替え: {historySortDesc ? '新しい順' : '古い順'}
@@ -264,19 +291,47 @@ export default function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto bg-white scrollbar-hide">
-          <div className="max-w-4xl mx-auto divide-y divide-slate-50 pb-24">
+          <div className="max-w-4xl mx-auto divide-y divide-slate-50 pb-32"> {/* pb-32に増やして下部UIのスペース確保 */}
             
             {/* --- TRACKER --- */}
             {activeTab === Tab.TRACKER && currentCategoryRoutines.map((r, i) => {
               const done = logs.find(l => l.routineId === r.id && l.timestamp >= new Date().setHours(0,0,0,0));
               return (
-                <div key={r.id} onClick={() => { const today = new Date().setHours(0,0,0,0); const updated = done ? logs.filter(l => l.id !== done.id) : [{ id: nanoid(), routineId: r.id, timestamp: Date.now() }, ...logs]; setLogs(updated); sync('save', { r: routines, l: updated }); }} className={`p-3 flex items-center justify-between transition-colors cursor-pointer hover:bg-slate-50 ${focusIndex === i ? 'bg-slate-50/80' : ''}`}>
-                  <div className="flex items-center gap-4 pl-2">
-                    <span className={`text-2xl w-8 text-center ${done ? 'opacity-20 grayscale transition-all' : ''}`}>{r.emoji}</span>
-                    <span className={`font-bold text-base ${done ? 'text-slate-300 line-through' : 'text-slate-700'}`}>{r.title}</span>
+                // UI変更: p-3 -> p-2, text-base -> text-sm でコンパクト化
+                <div key={r.id} className={`p-2 flex items-center justify-between transition-colors hover:bg-slate-50 ${focusIndex === i ? 'bg-slate-50/80' : ''}`}>
+                  <div 
+                    className="flex items-center gap-3 pl-2 flex-1 cursor-pointer"
+                    onClick={() => { 
+                      const today = new Date().setHours(0,0,0,0); 
+                      const updated = done ? logs.filter(l => l.id !== done.id) : [{ id: nanoid(), routineId: r.id, timestamp: Date.now() }, ...logs]; 
+                      setLogs(updated); sync('save', { r: routines, l: updated }); 
+                    }}
+                  >
+                    <span className={`text-xl w-8 text-center ${done ? 'opacity-20 grayscale transition-all' : ''}`}>{r.emoji}</span>
+                    <span className={`font-bold text-sm ${done ? 'text-slate-300 line-through' : 'text-slate-700'}`}>{r.title}</span>
                   </div>
+                  
+                  {/* 時刻表示・編集エリア */}
                   {done ? (
-                    <span className="text-sm font-mono font-bold text-slate-400 mr-2">{new Date(done.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                    editingLogId === done.id ? (
+                      <input 
+                        type="time" 
+                        autoFocus
+                        className="text-sm font-mono border rounded px-1 py-0"
+                        defaultValue={new Date(done.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                        onBlur={(e) => updateLogTime(done.id, e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span 
+                        onClick={(e) => { e.stopPropagation(); setEditingLogId(done.id); }}
+                        className="text-sm font-mono font-bold text-slate-400 mr-2 cursor-pointer hover:text-slate-600 hover:underline decoration-dotted"
+                        title="クリックして時刻を修正"
+                      >
+                        {new Date(done.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                      </span>
+                    )
                   ) : (
                     <div className="w-5 h-5 border-2 border-slate-100 rounded-full mr-2" />
                   )}
@@ -288,16 +343,16 @@ export default function App() {
             {activeTab === Tab.MANAGE && (
               <>
                 {currentCategoryRoutines.map((r, i) => (
-                  <div key={r.id} onClick={() => setFocusIndex(i)} className={`p-3 pl-4 flex items-center gap-3 transition-colors hover:bg-slate-50 ${focusIndex === i ? 'bg-slate-50 border-l-4 border-slate-900' : 'pl-5'}`}>
-                    <button onClick={() => { setFocusIndex(i); setIsEmojiPickerOpen(true); }} className="text-2xl min-w-[32px] hover:scale-110 transition-transform">{r.emoji}</button>
-                    <input className="flex-1 font-bold text-base text-slate-700 bg-transparent border-none focus:ring-0 p-0" value={r.title} onChange={(e) => { const updated = routines.map((ru) => ru.id === r.id ? { ...ru, title: e.target.value } : ru); setRoutines(updated); }} onBlur={() => sync('save', { r: routines, l: logs })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+                  // UI変更: p-3 -> p-2, text-base -> text-sm
+                  <div key={r.id} onClick={() => setFocusIndex(i)} className={`p-2 pl-4 flex items-center gap-3 transition-colors hover:bg-slate-50 ${focusIndex === i ? 'bg-slate-50 border-l-4 border-slate-900' : 'pl-5'}`}>
+                    <button onClick={() => { setFocusIndex(i); setIsEmojiPickerOpen(true); }} className="text-xl min-w-[32px] hover:scale-110 transition-transform">{r.emoji}</button>
+                    <input className="flex-1 font-bold text-sm text-slate-700 bg-transparent border-none focus:ring-0 p-0" value={r.title} onChange={(e) => { const updated = routines.map((ru) => ru.id === r.id ? { ...ru, title: e.target.value } : ru); setRoutines(updated); }} onBlur={() => sync('save', { r: routines, l: logs })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
                     
-                    {/* AI Button with Loading State */}
                     <button onClick={(e) => { e.stopPropagation(); suggestEmoji(r.id); }} disabled={!!isGeneratingEmoji} className="p-2 relative">
                       {isGeneratingEmoji === r.id ? (
-                         <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-800 rounded-full animate-spin" />
+                         <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-800 rounded-full animate-spin" />
                       ) : (
-                        <span className="text-base opacity-30 hover:opacity-100 grayscale hover:grayscale-0 transition-all">🤖</span>
+                        <span className="text-sm opacity-30 hover:opacity-100 grayscale hover:grayscale-0 transition-all">🤖</span>
                       )}
                     </button>
                     
@@ -305,17 +360,30 @@ export default function App() {
                   </div>
                 ))}
                 
-                {/* Add Button at bottom of list */}
-                <div className="p-4 flex justify-end">
-                   <button className="flex items-center gap-2 text-sm font-bold text-slate-900 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-full transition-colors" onClick={() => { 
-                    const nr = { id: nanoid(), title: '新しい習慣', emoji: '✨', color: '', order: routines.length, category: categoryTab }; 
-                    const updatedRoutines = [...routines, nr];
-                    setRoutines(updatedRoutines); 
-                    setFocusIndex(updatedRoutines.filter(r => (r.category || 'Morning') === categoryTab).length - 1);
-                    sync('save', { r: updatedRoutines, l: logs }); 
-                  }}>
-                    <span>＋ 追加</span>
-                  </button>
+                {/* 管理画面用ボトムコントロールバー (固定表示) */}
+                <div className="fixed bottom-16 md:bottom-0 left-0 md:left-64 right-0 bg-white/90 backdrop-blur border-t p-3 flex justify-between items-center z-20">
+                  <div className="flex-1"></div>
+                  {/* 中央：上下移動キー */}
+                  <div className="flex gap-1">
+                    <button onClick={() => moveItem(focusIndex, focusIndex - 1)} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+                    </button>
+                    <button onClick={() => moveItem(focusIndex, focusIndex + 1)} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                  </div>
+                  {/* 右端：追加ボタン */}
+                  <div className="flex-1 flex justify-end">
+                    <button className="flex items-center gap-2 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 px-4 py-3 rounded-lg transition-colors shadow-lg" onClick={() => { 
+                      const nr = { id: nanoid(), title: '新しい習慣', emoji: '✨', color: '', order: routines.length, category: categoryTab }; 
+                      const updatedRoutines = [...routines, nr];
+                      setRoutines(updatedRoutines); 
+                      setFocusIndex(updatedRoutines.filter(r => (r.category || 'Morning') === categoryTab).length - 1);
+                      sync('save', { r: updatedRoutines, l: logs }); 
+                    }}>
+                      <span>＋ 追加</span>
+                    </button>
+                  </div>
                 </div>
               </>
             )}
@@ -326,9 +394,10 @@ export default function App() {
                  {logs.sort((a,b)=> historySortDesc ? b.timestamp - a.timestamp : a.timestamp - b.timestamp).slice(0, 100).map(l => {
                     const r = routines.find(ru => ru.id === l.routineId);
                     return (
-                      <div key={l.id} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                      // UI変更: p-4 -> p-2
+                      <div key={l.id} className="p-2 flex justify-between items-center hover:bg-slate-50 transition-colors">
                         <div className="flex items-center gap-4">
-                          <span className="text-xl opacity-80">{r?.emoji}</span>
+                          <span className="text-lg opacity-80">{r?.emoji}</span>
                           <span className="font-bold text-sm text-slate-600">{r?.title}</span>
                         </div>
                         <div className="text-slate-500 font-mono font-bold text-sm">
@@ -385,7 +454,7 @@ export default function App() {
                           stroke={`hsl(${idx * 60}, 70%, 50%)`} 
                           strokeWidth={2} 
                           dot={{r: 3}} 
-                          connectNulls={false} // 線を途切れさせる
+                          connectNulls={false}
                           isAnimationActive={false}
                         />
                       ))}
