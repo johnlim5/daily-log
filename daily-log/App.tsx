@@ -76,6 +76,11 @@ export default function App() {
   // History
   const [historySortDesc, setHistorySortDesc] = useState(true);
 
+  // 完了フィードバック
+  const [progressPulse, setProgressPulse] = useState(false);
+  const [showCheckPop, setShowCheckPop] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => localStorage.getItem('sound_enabled') !== 'false');
+
   // Analysis
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingEmoji, setIsGeneratingEmoji] = useState<string | null>(null);
@@ -114,6 +119,42 @@ export default function App() {
   };
 
   useEffect(() => { if (password && savePassword) sync('fetch'); }, []); // 初回ロード時、保存済みなら自動ログイン試行
+
+  // --- 完了フィードバック（サウンド＆アニメーション） ---
+  const playCompletionFeedback = useCallback(() => {
+    // プログレスバーのパルスアニメーション
+    setProgressPulse(true);
+    setTimeout(() => setProgressPulse(false), 600);
+
+    // チェックマーク ポップアニメーション
+    setShowCheckPop(true);
+    setTimeout(() => setShowCheckPop(false), 500);
+
+    // サウンドフィードバック（Web Audio API）
+    if (soundEnabled) {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        // 心地よい完了音: 2音の短いチャイム
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+        oscillator.frequency.setValueAtTime(1318.5, audioCtx.currentTime + 0.1); // E6
+
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.3);
+      } catch (e) {
+        // Audio API非対応環境では無視
+      }
+    }
+  }, [soundEnabled]);
 
   // --- Initial Time Check ---
   useEffect(() => {
@@ -332,25 +373,25 @@ export default function App() {
       <main className="flex-1 flex flex-col min-h-0 relative">
         {/* Header */}
         <header className="p-4 md:p-6 bg-white z-10">
-          <div className="max-w-4xl mx-auto flex justify-between items-center h-10">
+          <div className="max-w-4xl mx-auto flex justify-between items-center h-10 gap-2">
             {(activeTab === Tab.TRACKER || activeTab === Tab.MANAGE) ? (
-              <div className="flex items-center gap-3">
-                <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-100">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex bg-slate-50 p-0.5 rounded-lg border border-slate-100 flex-shrink-0">
                   {(['Morning', 'Afternoon', 'Evening'] as Category[]).map(c => (
-                    <button key={c} onClick={() => {setCategoryTab(c); setFocusIndex(0);}} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${categoryTab === c ? 'bg-white text-slate-900 shadow-sm border border-slate-100' : 'text-slate-400'}`}>
+                    <button key={c} onClick={() => {setCategoryTab(c); setFocusIndex(0);}} className={`px-2 py-1 rounded-md text-xs font-bold transition-all ${categoryTab === c ? 'bg-white text-slate-900 shadow-sm border border-slate-100' : 'text-slate-400'}`}>
                       {c === 'Morning' ? '朝' : c === 'Afternoon' ? '昼' : '夜'}
                     </button>
                   ))}
                 </div>
                 {/* 進捗表示 */}
                 {activeTab === Tab.TRACKER && totalCount > 0 && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <div className="text-xs font-bold text-slate-500">
                       {completedCount}/{totalCount}
                     </div>
-                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="w-10 sm:w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-slate-800 rounded-full transition-all duration-300"
+                        className={`h-full bg-slate-800 rounded-full transition-all duration-300 ${progressPulse ? 'progress-pulse' : ''}`}
                         style={{ width: `${(completedCount / totalCount) * 100}%` }}
                       />
                     </div>
@@ -359,26 +400,47 @@ export default function App() {
                     )}
                   </div>
                 )}
-                {/* フォーカスモード切り替え */}
-                {activeTab === Tab.TRACKER && (
-                  <button
-                    onClick={() => {
-                      const newMode = !isFocusMode;
-                      setIsFocusMode(newMode);
-                      localStorage.setItem('focus_mode', String(newMode));
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      isFocusMode
-                        ? 'bg-amber-500 text-white shadow-md'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                  >
-                    {isFocusMode ? '集中' : '一覧'}
-                  </button>
-                )}
               </div>
             ) : <div />}
-            
+
+            {/* 右側: フォーカスモード・サウンド切り替え */}
+            {activeTab === Tab.TRACKER && (
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {/* サウンド切り替え */}
+                <button
+                  onClick={() => {
+                    const newSound = !soundEnabled;
+                    setSoundEnabled(newSound);
+                    localStorage.setItem('sound_enabled', String(newSound));
+                    if (newSound) playCompletionFeedback();
+                  }}
+                  className={`p-1.5 rounded-lg text-sm transition-all ${
+                    soundEnabled
+                      ? 'bg-green-100 text-green-600'
+                      : 'bg-slate-100 text-slate-400'
+                  }`}
+                  title={soundEnabled ? '効果音ON' : '効果音OFF'}
+                >
+                  {soundEnabled ? '🔔' : '🔕'}
+                </button>
+                {/* フォーカスモード切り替え */}
+                <button
+                  onClick={() => {
+                    const newMode = !isFocusMode;
+                    setIsFocusMode(newMode);
+                    localStorage.setItem('focus_mode', String(newMode));
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    isFocusMode
+                      ? 'bg-amber-500 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  {isFocusMode ? '集中' : '一覧'}
+                </button>
+              </div>
+            )}
+
             {activeTab === Tab.HISTORY && (
                <button onClick={()=>setHistorySortDesc(!historySortDesc)} className="text-xs font-bold bg-slate-100 px-3 py-1 rounded text-slate-600">
                  並び替え: {historySortDesc ? '新しい順' : '古い順'}
@@ -426,6 +488,8 @@ export default function App() {
                                 sync('save', { r: routines, l: updated });
                                 // 後回しリストから削除
                                 setPostponedTasks(prev => prev.filter(id => id !== nextRoutine.id));
+                                // 完了フィードバック
+                                playCompletionFeedback();
                               }}
                               className="flex-1 py-4 bg-amber-500 hover:bg-amber-600 text-white text-lg font-bold rounded-2xl shadow-lg shadow-amber-300/50 transition-all active:scale-95"
                             >
@@ -554,6 +618,8 @@ export default function App() {
                       const today = new Date().setHours(0,0,0,0);
                       const updated = done ? logs.filter(l => l.id !== done.id) : [{ id: nanoid(), routineId: r.id, timestamp: Date.now() }, ...logs];
                       setLogs(updated); sync('save', { r: routines, l: updated });
+                      // 完了時のみフィードバック（取り消し時は鳴らさない）
+                      if (!done) playCompletionFeedback();
                     }}
                   >
                     {/* 次のタスクマーカー - パルスアニメーション付き */}
@@ -746,6 +812,13 @@ export default function App() {
             </button>
           ))}
         </nav>
+
+        {/* グローバルチェックマーク オーバーレイ */}
+        {showCheckPop && (
+          <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-[200]">
+            <span className="text-8xl check-pop text-green-500 drop-shadow-[0_0_30px_rgba(34,197,94,0.8)]">✓</span>
+          </div>
+        )}
       </main>
 
       {/* Emoji Picker Modal */}
