@@ -253,6 +253,12 @@
           <input type="number" id="inputLong" value="15" min="1" max="60">
         </div>
       </div>
+      <div class="settings-grid" style="margin-top: 1rem;">
+        <div class="setting-item" style="grid-column: span 2;">
+          <label>Voice <span class="setting-unit">every N min (0=OFF)</span></label>
+          <input type="number" id="inputAnnounce" value="5" min="0" max="60">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -277,6 +283,37 @@
     const $inputBreak = document.getElementById('inputBreak');
     const $inputLong = document.getElementById('inputLong');
     const $notifBanner = document.getElementById('notifBanner');
+    const $inputAnnounce = document.getElementById('inputAnnounce');
+
+    // ── Voice Announcement ──
+    let lastAnnouncedMinute = -1;
+
+    function speak(text) {
+      if (!('speechSynthesis' in window)) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ja-JP';
+      utter.rate = 1.1;
+      speechSynthesis.speak(utter);
+    }
+
+    function announceStart(durationMs) {
+      const minutes = Math.round(durationMs / 60000);
+      speak(minutes + '\u5206\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3092\u958B\u59CB\u3057\u307E\u3059');
+      lastAnnouncedMinute = 0;
+    }
+
+    function checkAnnouncement(remaining, currentPhase) {
+      if (currentPhase !== 'work') return;
+      const interval = parseInt($inputAnnounce.value) || 0;
+      if (interval <= 0) return;
+      const elapsed = totalDuration - remaining;
+      const elapsedMin = Math.floor(elapsed / 60000);
+      // Announce at each interval crossing (but not at 0, and not after timer ends)
+      if (elapsedMin > 0 && elapsedMin % interval === 0 && elapsedMin !== lastAnnouncedMinute && remaining > 5000) {
+        lastAnnouncedMinute = elapsedMin;
+        speak(elapsedMin + '\u5206\u7D4C\u904E');
+      }
+    }
 
     // ── Web Worker ──
     const worker = new Worker('worker.js');
@@ -286,6 +323,7 @@
 
       if (msg.type === 'tick') {
         updateDisplay(msg.remaining, msg.phase);
+        checkAnnouncement(msg.remaining, msg.phase);
       }
 
       if (msg.type === 'paused') {
@@ -380,6 +418,7 @@
       $inputWork.disabled = settingsDisabled;
       $inputBreak.disabled = settingsDisabled;
       $inputLong.disabled = settingsDisabled;
+      $inputAnnounce.disabled = settingsDisabled;
     }
 
     function setPhaseUI(p) {
@@ -394,6 +433,7 @@
       state = 'idle';
       phase = 'work';
       pausedRemaining = 0;
+      lastAnnouncedMinute = -1;
       document.body.className = '';
       $ring.classList.remove('work', 'break');
       $ring.style.strokeDashoffset = '0';
@@ -436,6 +476,7 @@
       totalDuration = getWorkMs();
       setPhaseUI('work');
       state = 'running';
+      announceStart(totalDuration);
       worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'work' });
       updateButtons();
     }
