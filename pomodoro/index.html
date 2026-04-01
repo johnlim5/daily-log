@@ -270,6 +270,7 @@
     let pausedRemaining = 0;
     let totalDuration = 0;
     let completedPomodoros = 0;
+    let totalWorkMs = 0; // cumulative focus time in ms
 
     // ── Elements ──
     const $time = document.getElementById('timerTime');
@@ -445,10 +446,20 @@
       updateButtons();
     }
 
+    function formatDuration(ms) {
+      const totalMin = Math.floor(ms / 60000);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      if (h > 0) return h + 'h ' + m + 'm';
+      return m + 'm';
+    }
+
     function updateSessionInfo() {
-      $session.textContent = completedPomodoros > 0
-        ? completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' done'
-        : '';
+      if (completedPomodoros === 0) {
+        $session.textContent = '';
+        return;
+      }
+      $session.textContent = completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' / ' + formatDuration(totalWorkMs);
     }
 
     // ── Durations ──
@@ -495,6 +506,7 @@
     function onPhaseComplete(completedPhase) {
       if (completedPhase === 'work') {
         completedPomodoros++;
+        totalWorkMs += getWorkMs();
         updateSessionInfo();
         playBeep(3, 880);
         sendNotification('Focus complete!', 'Time for a break.');
@@ -504,24 +516,26 @@
         totalDuration = getBreakMs();
         setPhaseUI('break');
         state = 'running';
+        lastAnnouncedMinute = -1;
+        const isLong = totalDuration === (parseInt($inputLong.value) || 15) * 60 * 1000;
+        speak(isLong ? '長い休憩です' : '休憩です');
         worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'break' });
         updateButtons();
 
       } else {
-        // Break complete
+        // Break complete → auto-start next work session
         playBeep(2, 660);
-        sendNotification('Break over!', 'Ready to focus again?');
+        sendNotification('Break over!', 'Starting next session.');
 
-        // Return to idle, let user manually start next work session
         phase = 'work';
-        state = 'idle';
-        document.body.className = '';
-        $ring.classList.remove('work', 'break');
-        $ring.style.strokeDashoffset = '0';
-        $phase.className = 'phase-label';
-        $phase.textContent = 'Break complete — click Start';
-        $time.textContent = formatTime(getWorkMs());
-        document.title = 'Pomodoro Timer';
+        totalDuration = getWorkMs();
+        setPhaseUI('work');
+        state = 'running';
+        lastAnnouncedMinute = -1;
+        const minutes = Math.round(totalDuration / 60000);
+        speak('休憩終了。' + minutes + '分のセッションを開始します');
+        lastAnnouncedMinute = 0;
+        worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'work' });
         updateButtons();
       }
     }
