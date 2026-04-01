@@ -333,7 +333,7 @@
         updateButtons();
       }
 
-      if (msg.type === 'done') {
+      if (msg.type === 'done' && msg.phase) {
         onPhaseComplete(msg.phase);
       }
 
@@ -466,7 +466,7 @@
     function getWorkMs() { return (parseInt($inputWork.value) || 25) * 60 * 1000; }
     function getBreakMs() {
       // Long break every 4 pomodoros
-      if ((completedPomodoros + 1) % 4 === 0 && phase === 'break') {
+      if (completedPomodoros % 4 === 0) {
         return (parseInt($inputLong.value) || 15) * 60 * 1000;
       }
       return (parseInt($inputBreak.value) || 5) * 60 * 1000;
