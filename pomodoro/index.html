@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pomodoro Timer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --work-color: #e74c3c;
+      --work-bg: #fdf2f2;
+      --break-color: #27ae60;
+      --break-bg: #f0fdf4;
+      --idle-color: #64748b;
+      --idle-bg: #f8fafc;
+    }
+
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', 'Noto Sans JP', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.5s;
+      background-color: var(--idle-bg);
+    }
+    body.work { background-color: var(--work-bg); }
+    body.break { background-color: var(--break-bg); }
+
+    .container {
+      text-align: center;
+      max-width: 420px;
+      width: 100%;
+      padding: 2rem 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 0.3rem;
+      letter-spacing: 0.08em;
+    }
+
+    .phase-label {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--idle-color);
+      margin-bottom: 2rem;
+      min-height: 1.4em;
+      transition: color 0.3s;
+    }
+    .phase-label.work { color: var(--work-color); }
+    .phase-label.break { color: var(--break-color); }
+
+    /* Circular progress ring */
+    .timer-ring-container {
+      position: relative;
+      width: 260px;
+      height: 260px;
+      margin: 0 auto 2rem;
+    }
+
+    .timer-ring {
+      transform: rotate(-90deg);
+    }
+
+    .timer-ring-bg {
+      fill: none;
+      stroke: #e2e8f0;
+      stroke-width: 8;
+    }
+
+    .timer-ring-progress {
+      fill: none;
+      stroke: var(--idle-color);
+      stroke-width: 8;
+      stroke-linecap: round;
+      transition: stroke 0.5s, stroke-dashoffset 0.3s;
+    }
+    .timer-ring-progress.work { stroke: var(--work-color); }
+    .timer-ring-progress.break { stroke: var(--break-color); }
+
+    .timer-display {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .timer-time {
+      font-size: 3.5rem;
+      font-weight: 300;
+      font-variant-numeric: tabular-nums;
+      color: #1e293b;
+      line-height: 1;
+    }
+
+    .timer-session {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-top: 0.5rem;
+    }
+
+    /* Buttons */
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 0.75rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.2s, opacity 0.2s;
+      outline: none;
+    }
+    button:active { transform: scale(0.96); }
+    button:disabled { opacity: 0.4; cursor: default; transform: none; }
+
+    .btn-primary {
+      background: #1e293b;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #475569;
+    }
+    .btn-secondary:hover:not(:disabled) { background: #cbd5e1; }
+
+    .btn-danger {
+      background: transparent;
+      color: #94a3b8;
+      padding: 0.75rem 1rem;
+    }
+    .btn-danger:hover:not(:disabled) { color: #ef4444; }
+
+    /* Settings */
+    .settings {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 1.5rem;
+    }
+
+    .settings-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1rem;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .setting-item label {
+      display: block;
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 0.3rem;
+    }
+
+    .setting-item input {
+      width: 100%;
+      text-align: center;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0.5rem;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #1e293b;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .setting-item input:focus { border-color: #94a3b8; }
+    .setting-item input:disabled { background: #f8fafc; color: #94a3b8; }
+
+    .setting-unit {
+      font-size: 0.7rem;
+      color: #94a3b8;
+    }
+
+    /* Notification permission banner */
+    .notif-banner {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.85rem;
+      color: #92400e;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .notif-banner:hover { background: #fef3c7; }
+    .notif-banner.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>POMODORO</h1>
+    <div class="phase-label" id="phaseLabel">Ready</div>
+
+    <div id="notifBanner" class="notif-banner hidden" onclick="requestNotifPermission()">
+      Click to enable notifications (recommended)
+    </div>
+
+    <div class="timer-ring-container">
+      <svg class="timer-ring" width="260" height="260" viewBox="0 0 260 260">
+        <circle class="timer-ring-bg" cx="130" cy="130" r="115"></circle>
+        <circle class="timer-ring-progress" id="ringProgress" cx="130" cy="130" r="115"
+                stroke-dasharray="722.57" stroke-dashoffset="0"></circle>
+      </svg>
+      <div class="timer-display">
+        <div class="timer-time" id="timerTime">25:00</div>
+        <div class="timer-session" id="sessionInfo"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-primary" id="btnStart" onclick="handleStart()">Start</button>
+      <button class="btn-secondary" id="btnPause" onclick="handlePause()" disabled>Pause</button>
+      <button class="btn-danger" id="btnStop" onclick="handleStop()" disabled>Reset</button>
+    </div>
+
+    <div class="settings">
+      <div class="settings-title">Settings</div>
+      <div class="settings-grid">
+        <div class="setting-item">
+          <label>Work <span class="setting-unit">min</span></label>
+          <input type="number" id="inputWork" value="25" min="1" max="120">
+        </div>
+        <div class="setting-item">
+          <label>Break <span class="setting-unit">min</span></label>
+          <input type="number" id="inputBreak" value="5" min="1" max="60">
+        </div>
+        <div class="setting-item">
+          <label>Long <span class="setting-unit">min</span></label>
+          <input type="number" id="inputLong" value="15" min="1" max="60">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── State ──
+    const CIRCUMFERENCE = 2 * Math.PI * 115; // ~722.57
+    let state = 'idle'; // idle | running | paused
+    let phase = 'work'; // work | break
+    let pausedRemaining = 0;
+    let totalDuration = 0;
+    let completedPomodoros = 0;
+
+    // ── Elements ──
+    const $time = document.getElementById('timerTime');
+    const $phase = document.getElementById('phaseLabel');
+    const $ring = document.getElementById('ringProgress');
+    const $session = document.getElementById('sessionInfo');
+    const $btnStart = document.getElementById('btnStart');
+    const $btnPause = document.getElementById('btnPause');
+    const $btnStop = document.getElementById('btnStop');
+    const $inputWork = document.getElementById('inputWork');
+    const $inputBreak = document.getElementById('inputBreak');
+    const $inputLong = document.getElementById('inputLong');
+    const $notifBanner = document.getElementById('notifBanner');
+
+    // ── Web Worker ──
+    const worker = new Worker('worker.js');
+
+    worker.onmessage = function (e) {
+      const msg = e.data;
+
+      if (msg.type === 'tick') {
+        updateDisplay(msg.remaining, msg.phase);
+      }
+
+      if (msg.type === 'paused') {
+        pausedRemaining = msg.remaining;
+        state = 'paused';
+        updateButtons();
+      }
+
+      if (msg.type === 'done') {
+        onPhaseComplete(msg.phase);
+      }
+
+      if (msg.type === 'stopped') {
+        resetToIdle();
+      }
+    };
+
+    // ── Audio (synthesized beep, no external files needed) ──
+    function playBeep(count, freq) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      for (let i = 0; i < count; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.3 + 0.25);
+        osc.start(ctx.currentTime + i * 0.3);
+        osc.stop(ctx.currentTime + i * 0.3 + 0.25);
+      }
+    }
+
+    // ── Notifications ──
+    function checkNotifPermission() {
+      if (!('Notification' in window)) {
+        $notifBanner.classList.add('hidden');
+        return;
+      }
+      if (Notification.permission === 'default') {
+        $notifBanner.classList.remove('hidden');
+      } else {
+        $notifBanner.classList.add('hidden');
+      }
+    }
+
+    function requestNotifPermission() {
+      if ('Notification' in window) {
+        Notification.requestPermission().then(() => checkNotifPermission());
+      }
+    }
+
+    function sendNotification(title, body) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">\uD83C\uDF45</text></svg>' });
+      }
+    }
+
+    // ── Display ──
+    function formatTime(ms) {
+      const totalSec = Math.ceil(ms / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function updateDisplay(remaining, currentPhase) {
+      $time.textContent = formatTime(remaining);
+      // Update ring progress
+      const fraction = totalDuration > 0 ? remaining / totalDuration : 1;
+      const offset = CIRCUMFERENCE * fraction;
+      $ring.style.strokeDashoffset = String(CIRCUMFERENCE - offset);
+      // Update title
+      document.title = formatTime(remaining) + (currentPhase === 'work' ? ' - Work' : ' - Break');
+    }
+
+    function updateButtons() {
+      const isIdle = state === 'idle';
+      const isRunning = state === 'running';
+      const isPaused = state === 'paused';
+
+      $btnStart.textContent = isPaused ? 'Resume' : 'Start';
+      $btnStart.disabled = isRunning;
+      $btnPause.disabled = !isRunning;
+      $btnStop.disabled = isIdle;
+
+      // Disable settings while active
+      const settingsDisabled = !isIdle;
+      $inputWork.disabled = settingsDisabled;
+      $inputBreak.disabled = settingsDisabled;
+      $inputLong.disabled = settingsDisabled;
+    }
+
+    function setPhaseUI(p) {
+      document.body.className = p;
+      $ring.classList.remove('work', 'break');
+      $ring.classList.add(p === 'work' ? 'work' : 'break');
+      $phase.className = 'phase-label ' + (p === 'work' ? 'work' : 'break');
+      $phase.textContent = p === 'work' ? 'Focus' : 'Break';
+    }
+
+    function resetToIdle() {
+      state = 'idle';
+      phase = 'work';
+      pausedRemaining = 0;
+      document.body.className = '';
+      $ring.classList.remove('work', 'break');
+      $ring.style.strokeDashoffset = '0';
+      $phase.className = 'phase-label';
+      $phase.textContent = 'Ready';
+      $time.textContent = formatTime(getWorkMs());
+      document.title = 'Pomodoro Timer';
+      updateSessionInfo();
+      updateButtons();
+    }
+
+    function updateSessionInfo() {
+      $session.textContent = completedPomodoros > 0
+        ? completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' done'
+        : '';
+    }
+
+    // ── Durations ──
+    function getWorkMs() { return (parseInt($inputWork.value) || 25) * 60 * 1000; }
+    function getBreakMs() {
+      // Long break every 4 pomodoros
+      if ((completedPomodoros + 1) % 4 === 0 && phase === 'break') {
+        return (parseInt($inputLong.value) || 15) * 60 * 1000;
+      }
+      return (parseInt($inputBreak.value) || 5) * 60 * 1000;
+    }
+
+    // ── Actions ──
+    function handleStart() {
+      if (state === 'paused') {
+        // Resume
+        state = 'running';
+        worker.postMessage({ action: 'resume', duration: pausedRemaining });
+        updateButtons();
+        return;
+      }
+
+      // Fresh start
+      phase = 'work';
+      totalDuration = getWorkMs();
+      setPhaseUI('work');
+      state = 'running';
+      worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'work' });
+      updateButtons();
+    }
+
+    function handlePause() {
+      if (state !== 'running') return;
+      worker.postMessage({ action: 'pause' });
+      // State will be set to 'paused' when worker responds
+    }
+
+    function handleStop() {
+      worker.postMessage({ action: 'stop' });
+      resetToIdle();
+    }
+
+    function onPhaseComplete(completedPhase) {
+      if (completedPhase === 'work') {
+        completedPomodoros++;
+        updateSessionInfo();
+        playBeep(3, 880);
+        sendNotification('Focus complete!', 'Time for a break.');
+
+        // Auto-start break
+        phase = 'break';
+        totalDuration = getBreakMs();
+        setPhaseUI('break');
+        state = 'running';
+        worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'break' });
+        updateButtons();
+
+      } else {
+        // Break complete
+        playBeep(2, 660);
+        sendNotification('Break over!', 'Ready to focus again?');
+
+        // Return to idle, let user manually start next work session
+        phase = 'work';
+        state = 'idle';
+        document.body.className = '';
+        $ring.classList.remove('work', 'break');
+        $ring.style.strokeDashoffset = '0';
+        $phase.className = 'phase-label';
+        $phase.textContent = 'Break complete \u2014 click Start';
+        $time.textContent = formatTime(getWorkMs());
+        document.title = 'Pomodoro Timer';
+        updateButtons();
+      }
+    }
+
+    // ── Keyboard shortcuts ──
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (state === 'running') handlePause();
+        else if (state === 'paused' || state === 'idle') handleStart();
+      }
+      if (e.code === 'Escape') {
+        handleStop();
+      }
+    });
+
+    // ── Init ──
+    checkNotifPermission();
+    $time.textContent = formatTime(getWorkMs());
+    updateSessionInfo();
+
+    // Update displayed time when work duration changes
+    $inputWork.addEventListener('input', () => {
+      if (state === 'idle') $time.textContent = formatTime(getWorkMs());
+    });
+  </script>
+</body>
+</html>
