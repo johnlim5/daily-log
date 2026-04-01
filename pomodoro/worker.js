@@ -14,7 +14,9 @@ function tick() {
     clearInterval(intervalId);
     intervalId = null;
     endTime = null;
-    postMessage({ type: 'done', phase });
+    const donePhase = phase;
+    phase = null;
+    postMessage({ type: 'done', phase: donePhase });
   }
 }
 
