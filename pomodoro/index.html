@@ -250,29 +250,27 @@
         </div>
         <div class="setting-item">
           <label>Long <span class="setting-unit">min</span></label>
-          <input type="number" id="inputLong" value="15" min="1" max="60">
+          <input type="number" id="inputLong" value="5" min="1" max="60">
         </div>
       </div>
       <div class="settings-grid" style="margin-top: 1rem;">
         <div class="setting-item" style="grid-column: span 2;">
           <label>Voice <span class="setting-unit">every N min (0=OFF)</span></label>
-          <input type="number" id="inputAnnounce" value="5" min="0" max="60">
+          <input type="number" id="inputAnnounce" value="1" min="0" max="60">
         </div>
       </div>
     </div>
   </div>
 
   <script>
-    // \u2500\u2500 State \u2500\u2500
-    const CIRCUMFERENCE = 2 * Math.PI * 115; // ~722.57
-    let state = 'idle'; // idle | running | paused
-    let phase = 'work'; // work | break
+    const CIRCUMFERENCE = 2 * Math.PI * 115;
+    let state = 'idle';
+    let phase = 'work';
     let pausedRemaining = 0;
     let totalDuration = 0;
     let completedPomodoros = 0;
-    let totalWorkMs = 0; // cumulative focus time in ms
+    let totalWorkMs = 0;
 
-    // \u2500\u2500 Elements \u2500\u2500
     const $time = document.getElementById('timerTime');
     const $phase = document.getElementById('phaseLabel');
     const $ring = document.getElementById('ringProgress');
@@ -286,7 +284,6 @@
     const $notifBanner = document.getElementById('notifBanner');
     const $inputAnnounce = document.getElementById('inputAnnounce');
 
-    // \u2500\u2500 Voice Announcement \u2500\u2500
     let lastAnnouncedMinute = -1;
 
     function speak(text) {
@@ -314,9 +311,8 @@
           speak(elapsedMin + '\u5206\u7D4C\u904E');
         }
       } else {
-        // Break: announce remaining time
         const remainMin = Math.ceil(remaining / 60000);
-        const lastRemainMin = Math.ceil((remaining + 200) / 60000); // approximate previous tick
+        const lastRemainMin = Math.ceil((remaining + 200) / 60000);
         if (remainMin !== lastRemainMin && remainMin > 0 && remainMin % interval === 0 && remainMin !== lastAnnouncedMinute) {
           lastAnnouncedMinute = remainMin;
           speak('\u4F11\u61A9\u6B8B\u308A' + remainMin + '\u5206');
@@ -324,7 +320,6 @@
       }
     }
 
-    // \u2500\u2500 Web Worker \u2500\u2500
     const worker = new Worker('worker.js');
 
     worker.onmessage = function (e) {
@@ -350,7 +345,6 @@
       }
     };
 
-    // \u2500\u2500 Audio (synthesized beep, no external files needed) \u2500\u2500
     function playBeep(count, freq) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
@@ -369,7 +363,6 @@
       }
     }
 
-    // \u2500\u2500 Notifications \u2500\u2500
     function checkNotifPermission() {
       if (!('Notification' in window)) {
         $notifBanner.classList.add('hidden');
@@ -394,7 +387,6 @@
       }
     }
 
-    // \u2500\u2500 Display \u2500\u2500
     function formatTime(ms) {
       const totalSec = Math.ceil(ms / 1000);
       const m = Math.floor(totalSec / 60);
@@ -404,11 +396,9 @@
 
     function updateDisplay(remaining, currentPhase) {
       $time.textContent = formatTime(remaining);
-      // Update ring progress
       const fraction = totalDuration > 0 ? remaining / totalDuration : 1;
       const offset = CIRCUMFERENCE * fraction;
       $ring.style.strokeDashoffset = String(CIRCUMFERENCE - offset);
-      // Update title
       document.title = formatTime(remaining) + (currentPhase === 'work' ? ' - Work' : ' - Break');
     }
 
@@ -422,7 +412,6 @@
       $btnPause.disabled = !isRunning;
       $btnStop.disabled = isIdle;
 
-      // Disable settings while active
       const settingsDisabled = !isIdle;
       $inputWork.disabled = settingsDisabled;
       $inputBreak.disabled = settingsDisabled;
@@ -470,27 +459,22 @@
       $session.textContent = completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' / ' + formatDuration(totalWorkMs);
     }
 
-    // \u2500\u2500 Durations \u2500\u2500
     function getWorkMs() { return (parseInt($inputWork.value) || 25) * 60 * 1000; }
     function getBreakMs() {
-      // Long break every 4 pomodoros
       if (completedPomodoros % 4 === 0) {
-        return (parseInt($inputLong.value) || 15) * 60 * 1000;
+        return (parseInt($inputLong.value) || 5) * 60 * 1000;
       }
       return (parseInt($inputBreak.value) || 5) * 60 * 1000;
     }
 
-    // \u2500\u2500 Actions \u2500\u2500
     function handleStart() {
       if (state === 'paused') {
-        // Resume
         state = 'running';
         worker.postMessage({ action: 'resume', duration: pausedRemaining });
         updateButtons();
         return;
       }
 
-      // Fresh start
       phase = 'work';
       totalDuration = getWorkMs();
       setPhaseUI('work');
@@ -503,7 +487,6 @@
     function handlePause() {
       if (state !== 'running') return;
       worker.postMessage({ action: 'pause' });
-      // State will be set to 'paused' when worker responds
     }
 
     function handleStop() {
@@ -519,7 +502,6 @@
         playBeep(3, 880);
         sendNotification('Focus complete!', 'Time for a break.');
 
-        // Auto-start break
         phase = 'break';
         totalDuration = getBreakMs();
         setPhaseUI('break');
@@ -531,7 +513,6 @@
         updateButtons();
 
       } else {
-        // Break complete \u2192 auto-start next work session
         playBeep(2, 660);
         sendNotification('Break over!', 'Starting next session.');
 
@@ -548,7 +529,6 @@
       }
     }
 
-    // \u2500\u2500 Keyboard shortcuts \u2500\u2500
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
       if (e.code === 'Space') {
@@ -561,12 +541,10 @@
       }
     });
 
-    // \u2500\u2500 Init \u2500\u2500
     checkNotifPermission();
     $time.textContent = formatTime(getWorkMs());
     updateSessionInfo();
 
-    // Update displayed time when work duration changes
     $inputWork.addEventListener('input', () => {
       if (state === 'idle') $time.textContent = formatTime(getWorkMs());
     });
