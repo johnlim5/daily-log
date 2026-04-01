@@ -263,15 +263,16 @@
   </div>
 
   <script>
-    // ── State ──
+    // \u2500\u2500 State \u2500\u2500
     const CIRCUMFERENCE = 2 * Math.PI * 115; // ~722.57
     let state = 'idle'; // idle | running | paused
     let phase = 'work'; // work | break
     let pausedRemaining = 0;
     let totalDuration = 0;
     let completedPomodoros = 0;
+    let totalWorkMs = 0; // cumulative focus time in ms
 
-    // ── Elements ──
+    // \u2500\u2500 Elements \u2500\u2500
     const $time = document.getElementById('timerTime');
     const $phase = document.getElementById('phaseLabel');
     const $ring = document.getElementById('ringProgress');
@@ -285,7 +286,7 @@
     const $notifBanner = document.getElementById('notifBanner');
     const $inputAnnounce = document.getElementById('inputAnnounce');
 
-    // ── Voice Announcement ──
+    // \u2500\u2500 Voice Announcement \u2500\u2500
     let lastAnnouncedMinute = -1;
 
     function speak(text) {
@@ -315,7 +316,7 @@
       }
     }
 
-    // ── Web Worker ──
+    // \u2500\u2500 Web Worker \u2500\u2500
     const worker = new Worker('worker.js');
 
     worker.onmessage = function (e) {
@@ -341,7 +342,7 @@
       }
     };
 
-    // ── Audio (synthesized beep, no external files needed) ──
+    // \u2500\u2500 Audio (synthesized beep, no external files needed) \u2500\u2500
     function playBeep(count, freq) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
@@ -360,7 +361,7 @@
       }
     }
 
-    // ── Notifications ──
+    // \u2500\u2500 Notifications \u2500\u2500
     function checkNotifPermission() {
       if (!('Notification' in window)) {
         $notifBanner.classList.add('hidden');
@@ -385,7 +386,7 @@
       }
     }
 
-    // ── Display ──
+    // \u2500\u2500 Display \u2500\u2500
     function formatTime(ms) {
       const totalSec = Math.ceil(ms / 1000);
       const m = Math.floor(totalSec / 60);
@@ -445,13 +446,23 @@
       updateButtons();
     }
 
-    function updateSessionInfo() {
-      $session.textContent = completedPomodoros > 0
-        ? completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' done'
-        : '';
+    function formatDuration(ms) {
+      const totalMin = Math.floor(ms / 60000);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      if (h > 0) return h + 'h ' + m + 'm';
+      return m + 'm';
     }
 
-    // ── Durations ──
+    function updateSessionInfo() {
+      if (completedPomodoros === 0) {
+        $session.textContent = '';
+        return;
+      }
+      $session.textContent = completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' / ' + formatDuration(totalWorkMs);
+    }
+
+    // \u2500\u2500 Durations \u2500\u2500
     function getWorkMs() { return (parseInt($inputWork.value) || 25) * 60 * 1000; }
     function getBreakMs() {
       // Long break every 4 pomodoros
@@ -461,7 +472,7 @@
       return (parseInt($inputBreak.value) || 5) * 60 * 1000;
     }
 
-    // ── Actions ──
+    // \u2500\u2500 Actions \u2500\u2500
     function handleStart() {
       if (state === 'paused') {
         // Resume
@@ -495,6 +506,7 @@
     function onPhaseComplete(completedPhase) {
       if (completedPhase === 'work') {
         completedPomodoros++;
+        totalWorkMs += getWorkMs();
         updateSessionInfo();
         playBeep(3, 880);
         sendNotification('Focus complete!', 'Time for a break.');
@@ -504,29 +516,31 @@
         totalDuration = getBreakMs();
         setPhaseUI('break');
         state = 'running';
+        lastAnnouncedMinute = -1;
+        const isLong = totalDuration === (parseInt($inputLong.value) || 15) * 60 * 1000;
+        speak(isLong ? '\u9577\u3044\u4F11\u61A9\u3067\u3059' : '\u4F11\u61A9\u3067\u3059');
         worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'break' });
         updateButtons();
 
       } else {
-        // Break complete
+        // Break complete \u2192 auto-start next work session
         playBeep(2, 660);
-        sendNotification('Break over!', 'Ready to focus again?');
+        sendNotification('Break over!', 'Starting next session.');
 
-        // Return to idle, let user manually start next work session
         phase = 'work';
-        state = 'idle';
-        document.body.className = '';
-        $ring.classList.remove('work', 'break');
-        $ring.style.strokeDashoffset = '0';
-        $phase.className = 'phase-label';
-        $phase.textContent = 'Break complete \u2014 click Start';
-        $time.textContent = formatTime(getWorkMs());
-        document.title = 'Pomodoro Timer';
+        totalDuration = getWorkMs();
+        setPhaseUI('work');
+        state = 'running';
+        lastAnnouncedMinute = -1;
+        const minutes = Math.round(totalDuration / 60000);
+        speak('\u4F11\u61A9\u7D42\u4E86\u3002' + minutes + '\u5206\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3092\u958B\u59CB\u3057\u307E\u3059');
+        lastAnnouncedMinute = 0;
+        worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'work' });
         updateButtons();
       }
     }
 
-    // ── Keyboard shortcuts ──
+    // \u2500\u2500 Keyboard shortcuts \u2500\u2500
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
       if (e.code === 'Space') {
@@ -539,7 +553,7 @@
       }
     });
 
-    // ── Init ──
+    // \u2500\u2500 Init \u2500\u2500
     checkNotifPermission();
     $time.textContent = formatTime(getWorkMs());
     updateSessionInfo();
