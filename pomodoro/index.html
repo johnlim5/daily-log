@@ -304,15 +304,23 @@
     }
 
     function checkAnnouncement(remaining, currentPhase) {
-      if (currentPhase !== 'work') return;
       const interval = parseInt($inputAnnounce.value) || 0;
       if (interval <= 0) return;
       const elapsed = totalDuration - remaining;
       const elapsedMin = Math.floor(elapsed / 60000);
-      // Announce at each interval crossing (but not at 0, and not after timer ends)
-      if (elapsedMin > 0 && elapsedMin % interval === 0 && elapsedMin !== lastAnnouncedMinute && remaining > 5000) {
-        lastAnnouncedMinute = elapsedMin;
-        speak(elapsedMin + '\u5206\u7D4C\u904E');
+      if (currentPhase === 'work') {
+        if (elapsedMin > 0 && elapsedMin % interval === 0 && elapsedMin !== lastAnnouncedMinute && remaining > 5000) {
+          lastAnnouncedMinute = elapsedMin;
+          speak(elapsedMin + '\u5206\u7D4C\u904E');
+        }
+      } else {
+        // Break: announce remaining time
+        const remainMin = Math.ceil(remaining / 60000);
+        const lastRemainMin = Math.ceil((remaining + 200) / 60000); // approximate previous tick
+        if (remainMin !== lastRemainMin && remainMin > 0 && remainMin % interval === 0 && remainMin !== lastAnnouncedMinute) {
+          lastAnnouncedMinute = remainMin;
+          speak('\u4F11\u61A9\u6B8B\u308A' + remainMin + '\u5206');
+        }
       }
     }
 
@@ -517,8 +525,8 @@
         setPhaseUI('break');
         state = 'running';
         lastAnnouncedMinute = -1;
-        const isLong = totalDuration === (parseInt($inputLong.value) || 15) * 60 * 1000;
-        speak(isLong ? '\u9577\u3044\u4F11\u61A9\u3067\u3059' : '\u4F11\u61A9\u3067\u3059');
+        const breakMin = Math.round(totalDuration / 60000);
+        speak(breakMin + '\u5206\u306E\u4F11\u61A9\u3092\u958B\u59CB\u3057\u307E\u3059');
         worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'break' });
         updateButtons();
 
