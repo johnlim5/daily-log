@@ -5,7 +5,8 @@ export enum Tab {
   TRACKER = 'TRACKER',
   MANAGE = 'MANAGE',
   HISTORY = 'HISTORY',
-  ANALYSIS = 'ANALYSIS'
+  ANALYSIS = 'ANALYSIS',
+  DASHBOARD = 'DASHBOARD'
 }
 
 export interface Routine {

@@ -41,6 +41,14 @@ const Icons = {
     <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? "0" : "2"} strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
     </svg>
+  ),
+  Dashboard: ({ active }: { active: boolean }) => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? "0" : "2"} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
   )
 };
 
@@ -361,7 +369,7 @@ export default function App() {
       <aside className="hidden md:flex flex-col w-64 fixed left-0 top-0 bottom-0 bg-white border-r p-6">
         <h1 className="text-2xl font-bold mb-10 tracking-tighter pl-2">Daily Log</h1>
         <nav className="space-y-2">
-          {[{t:Tab.TRACKER, l:'記録', Icon: Icons.Tracker}, {t:Tab.MANAGE, l:'管理', Icon: Icons.Manage}, {t:Tab.HISTORY, l:'履歴', Icon: Icons.History}, {t:Tab.ANALYSIS, l:'分析', Icon: Icons.Analysis}].map(n => (
+          {[{t:Tab.TRACKER, l:'記録', Icon: Icons.Tracker}, {t:Tab.MANAGE, l:'管理', Icon: Icons.Manage}, {t:Tab.HISTORY, l:'履歴', Icon: Icons.History}, {t:Tab.ANALYSIS, l:'分析', Icon: Icons.Analysis}, {t:Tab.DASHBOARD, l:'達成度', Icon: Icons.Dashboard}].map(n => (
             <button key={n.t} onClick={() => setActiveTab(n.t)} className={`w-full text-left px-4 py-3 rounded-lg font-bold transition-all flex items-center gap-4 ${activeTab === n.t ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>
               <n.Icon active={activeTab === n.t} />
               <span className="text-base">{n.l}</span>
@@ -800,12 +808,134 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {/* --- DASHBOARD --- */}
+            {activeTab === Tab.DASHBOARD && (() => {
+              const today = new Date();
+              const todayStart = new Date(today); todayStart.setHours(0,0,0,0);
+              const todayMs = todayStart.getTime();
+
+              const startOfDay = (d: Date) => { const c = new Date(d); c.setHours(0,0,0,0); return c; };
+              const formatDate = (d: Date) => `${d.getMonth()+1}/${d.getDate()}`;
+              const dayLabel = (d: Date) => ['日','月','火','水','木','金','土'][d.getDay()];
+
+              const computeAchievement = (date: Date) => {
+                const ds = startOfDay(date).getTime();
+                const de = ds + 86400000;
+                const dayLogs = logs.filter(l => l.timestamp >= ds && l.timestamp < de);
+                const doneIds = new Set(dayLogs.map(l => l.routineId));
+                const catsWithRoutines = new Set<string>();
+                const catsDone = new Set<string>();
+                for (const r of routines) {
+                  const cat = r.category || 'Morning';
+                  catsWithRoutines.add(cat);
+                  if (doneIds.has(r.id)) catsDone.add(cat);
+                }
+                const total = catsWithRoutines.size;
+                const done = catsDone.size;
+                const mark = total === 0 ? '-' : done >= 2 ? '○' : done === 1 ? '△' : '×';
+                const cats: Record<string, boolean | null> = {};
+                for (const c of ['Morning','Afternoon','Evening']) {
+                  cats[c] = catsWithRoutines.has(c) ? catsDone.has(c) : null;
+                }
+                return { mark, done, total, cats };
+              };
+
+              // Week navigation
+              const weekOffsetKey = 'dashboard_week_offset';
+              const [weekOffset, setWeekOffset] = React.useState(0);
+              const refDate = new Date(today); refDate.setDate(refDate.getDate() + weekOffset * 7);
+              const dow = refDate.getDay();
+              const monday = new Date(refDate); monday.setDate(refDate.getDate() - ((dow + 6) % 7));
+              const weekDays = Array.from({length:7}, (_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return d; });
+
+              const todayA = computeAchievement(today);
+              const weekA = weekDays.map(d => ({ date: d, ...computeAchievement(d) }));
+              const circleCount = weekA.filter(a => a.mark === '○' && startOfDay(a.date).getTime() <= todayMs).length;
+
+              const markColor = (m: string) => m === '○' ? 'text-green-600' : m === '△' ? 'text-yellow-500' : m === '×' ? 'text-red-400' : 'text-gray-300';
+              const markBg = (m: string) => m === '○' ? 'bg-green-50 border-green-200' : m === '△' ? 'bg-yellow-50 border-yellow-200' : m === '×' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200';
+              const catLabel: Record<string,string> = { Morning: '朝', Afternoon: '昼', Evening: '夜' };
+              const catIcon: Record<string,string> = { Morning: '☀️', Afternoon: '🌤', Evening: '🌙' };
+
+              return (
+                <div className="p-6 space-y-5">
+                  {/* Today */}
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+                    <div className="text-xs text-slate-400 mb-2 font-medium">今日の達成度</div>
+                    <div className="flex items-center gap-4">
+                      <div className={`text-5xl font-bold ${markColor(todayA.mark)}`}>{todayA.mark}</div>
+                      <div className="flex-1">
+                        <div className="flex gap-3">
+                          {(['Morning','Afternoon','Evening'] as const).map(cat => {
+                            const status = todayA.cats[cat];
+                            if (status === null) return null;
+                            return (
+                              <div key={cat} className={`flex items-center gap-1 text-sm ${status ? 'text-slate-700' : 'text-slate-300'}`}>
+                                <span>{catIcon[cat]}</span>
+                                <span className="font-medium">{catLabel[cat]}</span>
+                                {status ? <span className="text-green-500">✓</span> : <span className="text-slate-300">—</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-2">{todayA.done}/{todayA.total} カテゴリ完了</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Weekly Calendar */}
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <button onClick={() => setWeekOffset(o => o - 1)} className="p-1 text-slate-400 hover:text-slate-700">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
+                      </button>
+                      <div className="text-xs font-medium text-slate-500">{formatDate(weekDays[0])} 〜 {formatDate(weekDays[6])}</div>
+                      <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} className={`p-1 text-slate-400 hover:text-slate-700 ${weekOffset >= 0 ? 'invisible' : ''}`}>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-2">
+                      {weekA.map((a, i) => {
+                        const isToday = startOfDay(a.date).getTime() === todayMs;
+                        const isFuture = startOfDay(a.date).getTime() > todayMs;
+                        const m = isFuture ? '-' : a.mark;
+                        return (
+                          <div key={i} className="flex flex-col items-center gap-1">
+                            <div className={`text-[10px] font-medium ${isToday ? 'text-blue-600' : 'text-slate-400'}`}>{dayLabel(a.date)}</div>
+                            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center text-lg font-bold ${isToday ? 'ring-2 ring-blue-400 ring-offset-1' : ''} ${isFuture ? 'bg-gray-50 border-gray-100' : markBg(m)} ${markColor(m)}`}>
+                              {isFuture ? '' : m}
+                            </div>
+                            <div className={`text-[10px] ${isToday ? 'text-blue-600 font-semibold' : 'text-slate-400'}`}>{formatDate(a.date)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-center gap-2">
+                      <span className="text-sm text-slate-500">今週の</span>
+                      <span className="text-lg font-bold text-green-600">○</span>
+                      <span className="text-sm text-slate-700 font-semibold">{circleCount}<span className="text-slate-400 font-normal"> / 7 日</span></span>
+                    </div>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+                    <div className="text-xs text-slate-400 mb-2 font-medium">判定基準</div>
+                    <div className="flex justify-around text-sm">
+                      <div className="flex items-center gap-1.5"><span className="text-lg font-bold text-green-600">○</span><span className="text-slate-600">2〜3カテゴリ</span></div>
+                      <div className="flex items-center gap-1.5"><span className="text-lg font-bold text-yellow-500">△</span><span className="text-slate-600">1カテゴリ</span></div>
+                      <div className="flex items-center gap-1.5"><span className="text-lg font-bold text-red-400">×</span><span className="text-slate-600">0カテゴリ</span></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
         {/* Mobile Navigation */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-2 pb-6 z-50">
-          {[{t:Tab.TRACKER, l:'記録', Icon: Icons.Tracker}, {t:Tab.MANAGE, l:'管理', Icon: Icons.Manage}, {t:Tab.HISTORY, l:'履歴', Icon: Icons.History}, {t:Tab.ANALYSIS, l:'分析', Icon: Icons.Analysis}].map(n => (
+          {[{t:Tab.TRACKER, l:'記録', Icon: Icons.Tracker}, {t:Tab.MANAGE, l:'管理', Icon: Icons.Manage}, {t:Tab.HISTORY, l:'履歴', Icon: Icons.History}, {t:Tab.ANALYSIS, l:'分析', Icon: Icons.Analysis}, {t:Tab.DASHBOARD, l:'達成度', Icon: Icons.Dashboard}].map(n => (
             <button key={n.t} onClick={() => setActiveTab(n.t)} className={`flex flex-col items-center gap-1 w-16 transition-all ${activeTab === n.t ? 'text-slate-900' : 'text-slate-300'}`}>
               <n.Icon active={activeTab === n.t} />
               <span className="text-[10px] font-bold">{n.l}</span>
