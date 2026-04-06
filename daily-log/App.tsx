@@ -99,6 +99,9 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Dashboard
+  const [weekOffset, setWeekOffset] = useState(0);
+
   // --- Synchronization ---
   const sync = useCallback(async (action: 'fetch' | 'save', data?: {r: Routine[], l: RoutineLog[]}) => {
     const headers = { "X-App-Password": password, "Content-Type": "application/json" };
@@ -842,8 +845,6 @@ export default function App() {
               };
 
               // Week navigation
-              const weekOffsetKey = 'dashboard_week_offset';
-              const [weekOffset, setWeekOffset] = React.useState(0);
               const refDate = new Date(today); refDate.setDate(refDate.getDate() + weekOffset * 7);
               const dow = refDate.getDay();
               const monday = new Date(refDate); monday.setDate(refDate.getDate() - ((dow + 6) % 7));
