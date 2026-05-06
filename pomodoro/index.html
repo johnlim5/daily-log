@@ -105,6 +105,29 @@
       margin-top: 0.5rem;
     }
 
+    .timer-dots {
+      margin-top: 0.4rem;
+      display: flex;
+      gap: 0.3rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      max-width: 180px;
+    }
+    .timer-dots .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      transition: background 0.3s;
+    }
+    .timer-dots .dot.done {
+      background: var(--work-color);
+    }
+    .timer-dots .dot.current {
+      background: var(--work-color);
+      opacity: 0.4;
+    }
+
     /* Buttons */
     .controls {
       display: flex;
@@ -228,6 +251,7 @@
       <div class="timer-display">
         <div class="timer-time" id="timerTime">25:00</div>
         <div class="timer-session" id="sessionInfo"></div>
+        <div class="timer-dots" id="goalDots"></div>
       </div>
     </div>
 
@@ -254,9 +278,13 @@
         </div>
       </div>
       <div class="settings-grid" style="margin-top: 1rem;">
-        <div class="setting-item" style="grid-column: span 2;">
+        <div class="setting-item">
           <label>Voice <span class="setting-unit">every N min (0=OFF)</span></label>
           <input type="number" id="inputAnnounce" value="1" min="0" max="60">
+        </div>
+        <div class="setting-item">
+          <label>Goal <span class="setting-unit">sessions (0=∞)</span></label>
+          <input type="number" id="inputGoal" value="4" min="0" max="99">
         </div>
       </div>
     </div>
@@ -285,6 +313,8 @@
     const $inputLong = document.getElementById('inputLong');
     const $notifBanner = document.getElementById('notifBanner');
     const $inputAnnounce = document.getElementById('inputAnnounce');
+    const $inputGoal = document.getElementById('inputGoal');
+    const $goalDots = document.getElementById('goalDots');
 
     // ── Voice Announcement ──
     let lastAnnouncedMinute = -1;
@@ -428,6 +458,7 @@
       $inputBreak.disabled = settingsDisabled;
       $inputLong.disabled = settingsDisabled;
       $inputAnnounce.disabled = settingsDisabled;
+      $inputGoal.disabled = settingsDisabled;
     }
 
     function setPhaseUI(p) {
@@ -465,9 +496,26 @@
     function updateSessionInfo() {
       if (completedPomodoros === 0) {
         $session.textContent = '';
-        return;
+      } else {
+        $session.textContent = completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' / ' + formatDuration(totalWorkMs);
       }
-      $session.textContent = completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' / ' + formatDuration(totalWorkMs);
+      renderDots();
+    }
+
+    function renderDots() {
+      const goal = parseInt($inputGoal.value) || 0;
+      $goalDots.innerHTML = '';
+      if (goal <= 0) return;
+      for (let i = 0; i < goal; i++) {
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        if (i < completedPomodoros) {
+          dot.classList.add('done');
+        } else if (i === completedPomodoros && state === 'running' && phase === 'work') {
+          dot.classList.add('current');
+        }
+        $goalDots.appendChild(dot);
+      }
     }
 
     // ── Durations ──
@@ -498,6 +546,7 @@
       announceStart(totalDuration);
       worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'work' });
       updateButtons();
+      renderDots();
     }
 
     function handlePause() {
@@ -516,6 +565,25 @@
         completedPomodoros++;
         totalWorkMs += getWorkMs();
         updateSessionInfo();
+
+        // Check if goal reached
+        const goal = parseInt($inputGoal.value) || 0;
+        if (goal > 0 && completedPomodoros >= goal) {
+          playBeep(5, 1000);
+          speak('目標達成です。お疲れ様でした。');
+          sendNotification('Goal reached!', completedPomodoros + ' pomodoros completed.');
+          state = 'idle';
+          document.body.className = '';
+          $ring.classList.remove('work', 'break');
+          $ring.style.strokeDashoffset = '0';
+          $phase.className = 'phase-label';
+          $phase.textContent = 'Goal reached!';
+          $time.textContent = formatDuration(totalWorkMs);
+          document.title = 'Goal reached! - Pomodoro';
+          updateButtons();
+          return;
+        }
+
         playBeep(3, 880);
         sendNotification('Focus complete!', 'Time for a break.');
 
@@ -566,9 +634,11 @@
     $time.textContent = formatTime(getWorkMs());
     updateSessionInfo();
 
-    // Update displayed time when work duration changes
     $inputWork.addEventListener('input', () => {
       if (state === 'idle') $time.textContent = formatTime(getWorkMs());
+    });
+    $inputGoal.addEventListener('input', () => {
+      if (state === 'idle') renderDots();
     });
   </script>
 </body>
