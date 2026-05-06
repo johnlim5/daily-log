@@ -54,7 +54,6 @@
     .phase-label.work { color: var(--work-color); }
     .phase-label.break { color: var(--break-color); }
 
-    /* Circular progress ring */
     .timer-ring-container {
       position: relative;
       width: 260px;
@@ -105,7 +104,29 @@
       margin-top: 0.5rem;
     }
 
-    /* Buttons */
+    .timer-dots {
+      margin-top: 0.4rem;
+      display: flex;
+      gap: 0.3rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      max-width: 180px;
+    }
+    .timer-dots .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      transition: background 0.3s;
+    }
+    .timer-dots .dot.done {
+      background: var(--work-color);
+    }
+    .timer-dots .dot.current {
+      background: var(--work-color);
+      opacity: 0.4;
+    }
+
     .controls {
       display: flex;
       gap: 0.75rem;
@@ -146,7 +167,6 @@
     }
     .btn-danger:hover:not(:disabled) { color: #ef4444; }
 
-    /* Settings */
     .settings {
       border-top: 1px solid #e2e8f0;
       padding-top: 1.5rem;
@@ -194,7 +214,6 @@
       color: #94a3b8;
     }
 
-    /* Notification permission banner */
     .notif-banner {
       background: #fffbeb;
       border: 1px solid #fde68a;
@@ -228,6 +247,7 @@
       <div class="timer-display">
         <div class="timer-time" id="timerTime">25:00</div>
         <div class="timer-session" id="sessionInfo"></div>
+        <div class="timer-dots" id="goalDots"></div>
       </div>
     </div>
 
@@ -250,29 +270,31 @@
         </div>
         <div class="setting-item">
           <label>Long <span class="setting-unit">min</span></label>
-          <input type="number" id="inputLong" value="15" min="1" max="60">
+          <input type="number" id="inputLong" value="5" min="1" max="60">
         </div>
       </div>
       <div class="settings-grid" style="margin-top: 1rem;">
-        <div class="setting-item" style="grid-column: span 2;">
+        <div class="setting-item">
           <label>Voice <span class="setting-unit">every N min (0=OFF)</span></label>
-          <input type="number" id="inputAnnounce" value="5" min="0" max="60">
+          <input type="number" id="inputAnnounce" value="1" min="0" max="60">
+        </div>
+        <div class="setting-item">
+          <label>Goal <span class="setting-unit">sessions (0=∞)</span></label>
+          <input type="number" id="inputGoal" value="4" min="0" max="99">
         </div>
       </div>
     </div>
   </div>
 
   <script>
-    // \u2500\u2500 State \u2500\u2500
-    const CIRCUMFERENCE = 2 * Math.PI * 115; // ~722.57
-    let state = 'idle'; // idle | running | paused
-    let phase = 'work'; // work | break
+    const CIRCUMFERENCE = 2 * Math.PI * 115;
+    let state = 'idle';
+    let phase = 'work';
     let pausedRemaining = 0;
     let totalDuration = 0;
     let completedPomodoros = 0;
-    let totalWorkMs = 0; // cumulative focus time in ms
+    let totalWorkMs = 0;
 
-    // \u2500\u2500 Elements \u2500\u2500
     const $time = document.getElementById('timerTime');
     const $phase = document.getElementById('phaseLabel');
     const $ring = document.getElementById('ringProgress');
@@ -285,8 +307,9 @@
     const $inputLong = document.getElementById('inputLong');
     const $notifBanner = document.getElementById('notifBanner');
     const $inputAnnounce = document.getElementById('inputAnnounce');
+    const $inputGoal = document.getElementById('inputGoal');
+    const $goalDots = document.getElementById('goalDots');
 
-    // \u2500\u2500 Voice Announcement \u2500\u2500
     let lastAnnouncedMinute = -1;
 
     function speak(text) {
@@ -299,50 +322,51 @@
 
     function announceStart(durationMs) {
       const minutes = Math.round(durationMs / 60000);
-      speak(minutes + '\u5206\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3092\u958B\u59CB\u3057\u307E\u3059');
+      speak(minutes + '分のセッションを開始します');
       lastAnnouncedMinute = 0;
     }
 
     function checkAnnouncement(remaining, currentPhase) {
-      if (currentPhase !== 'work') return;
       const interval = parseInt($inputAnnounce.value) || 0;
       if (interval <= 0) return;
       const elapsed = totalDuration - remaining;
       const elapsedMin = Math.floor(elapsed / 60000);
-      // Announce at each interval crossing (but not at 0, and not after timer ends)
-      if (elapsedMin > 0 && elapsedMin % interval === 0 && elapsedMin !== lastAnnouncedMinute && remaining > 5000) {
-        lastAnnouncedMinute = elapsedMin;
-        speak(elapsedMin + '\u5206\u7D4C\u904E');
+      if (currentPhase === 'work') {
+        if (elapsedMin > 0 && elapsedMin % interval === 0 && elapsedMin !== lastAnnouncedMinute && remaining > 5000) {
+          lastAnnouncedMinute = elapsedMin;
+          speak(elapsedMin + '分経過');
+        }
+      } else {
+        const remainMin = Math.ceil(remaining / 60000);
+        const lastRemainMin = Math.ceil((remaining + 200) / 60000);
+        if (remainMin !== lastRemainMin && remainMin > 0 && remainMin % interval === 0 && remainMin !== lastAnnouncedMinute) {
+          lastAnnouncedMinute = remainMin;
+          speak('休憩残り' + remainMin + '分');
+        }
       }
     }
 
-    // \u2500\u2500 Web Worker \u2500\u2500
     const worker = new Worker('worker.js');
 
     worker.onmessage = function (e) {
       const msg = e.data;
-
       if (msg.type === 'tick') {
         updateDisplay(msg.remaining, msg.phase);
         checkAnnouncement(msg.remaining, msg.phase);
       }
-
       if (msg.type === 'paused') {
         pausedRemaining = msg.remaining;
         state = 'paused';
         updateButtons();
       }
-
-      if (msg.type === 'done') {
+      if (msg.type === 'done' && msg.phase) {
         onPhaseComplete(msg.phase);
       }
-
       if (msg.type === 'stopped') {
         resetToIdle();
       }
     };
 
-    // \u2500\u2500 Audio (synthesized beep, no external files needed) \u2500\u2500
     function playBeep(count, freq) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
@@ -361,17 +385,10 @@
       }
     }
 
-    // \u2500\u2500 Notifications \u2500\u2500
     function checkNotifPermission() {
-      if (!('Notification' in window)) {
-        $notifBanner.classList.add('hidden');
-        return;
-      }
-      if (Notification.permission === 'default') {
-        $notifBanner.classList.remove('hidden');
-      } else {
-        $notifBanner.classList.add('hidden');
-      }
+      if (!('Notification' in window)) { $notifBanner.classList.add('hidden'); return; }
+      if (Notification.permission === 'default') { $notifBanner.classList.remove('hidden'); }
+      else { $notifBanner.classList.add('hidden'); }
     }
 
     function requestNotifPermission() {
@@ -382,11 +399,10 @@
 
     function sendNotification(title, body) {
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(title, { body, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">\uD83C\uDF45</text></svg>' });
+        new Notification(title, { body, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🍅</text></svg>' });
       }
     }
 
-    // \u2500\u2500 Display \u2500\u2500
     function formatTime(ms) {
       const totalSec = Math.ceil(ms / 1000);
       const m = Math.floor(totalSec / 60);
@@ -396,11 +412,9 @@
 
     function updateDisplay(remaining, currentPhase) {
       $time.textContent = formatTime(remaining);
-      // Update ring progress
       const fraction = totalDuration > 0 ? remaining / totalDuration : 1;
       const offset = CIRCUMFERENCE * fraction;
       $ring.style.strokeDashoffset = String(CIRCUMFERENCE - offset);
-      // Update title
       document.title = formatTime(remaining) + (currentPhase === 'work' ? ' - Work' : ' - Break');
     }
 
@@ -408,18 +422,16 @@
       const isIdle = state === 'idle';
       const isRunning = state === 'running';
       const isPaused = state === 'paused';
-
       $btnStart.textContent = isPaused ? 'Resume' : 'Start';
       $btnStart.disabled = isRunning;
       $btnPause.disabled = !isRunning;
       $btnStop.disabled = isIdle;
-
-      // Disable settings while active
       const settingsDisabled = !isIdle;
       $inputWork.disabled = settingsDisabled;
       $inputBreak.disabled = settingsDisabled;
       $inputLong.disabled = settingsDisabled;
       $inputAnnounce.disabled = settingsDisabled;
+      $inputGoal.disabled = settingsDisabled;
     }
 
     function setPhaseUI(p) {
@@ -457,32 +469,43 @@
     function updateSessionInfo() {
       if (completedPomodoros === 0) {
         $session.textContent = '';
-        return;
+      } else {
+        $session.textContent = completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' / ' + formatDuration(totalWorkMs);
       }
-      $session.textContent = completedPomodoros + ' pomodoro' + (completedPomodoros > 1 ? 's' : '') + ' / ' + formatDuration(totalWorkMs);
+      renderDots();
     }
 
-    // \u2500\u2500 Durations \u2500\u2500
+    function renderDots() {
+      const goal = parseInt($inputGoal.value) || 0;
+      $goalDots.innerHTML = '';
+      if (goal <= 0) return;
+      for (let i = 0; i < goal; i++) {
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        if (i < completedPomodoros) {
+          dot.classList.add('done');
+        } else if (i === completedPomodoros && state === 'running' && phase === 'work') {
+          dot.classList.add('current');
+        }
+        $goalDots.appendChild(dot);
+      }
+    }
+
     function getWorkMs() { return (parseInt($inputWork.value) || 25) * 60 * 1000; }
     function getBreakMs() {
-      // Long break every 4 pomodoros
-      if ((completedPomodoros + 1) % 4 === 0 && phase === 'break') {
-        return (parseInt($inputLong.value) || 15) * 60 * 1000;
+      if (completedPomodoros % 4 === 0) {
+        return (parseInt($inputLong.value) || 5) * 60 * 1000;
       }
       return (parseInt($inputBreak.value) || 5) * 60 * 1000;
     }
 
-    // \u2500\u2500 Actions \u2500\u2500
     function handleStart() {
       if (state === 'paused') {
-        // Resume
         state = 'running';
         worker.postMessage({ action: 'resume', duration: pausedRemaining });
         updateButtons();
         return;
       }
-
-      // Fresh start
       phase = 'work';
       totalDuration = getWorkMs();
       setPhaseUI('work');
@@ -490,12 +513,12 @@
       announceStart(totalDuration);
       worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'work' });
       updateButtons();
+      renderDots();
     }
 
     function handlePause() {
       if (state !== 'running') return;
       worker.postMessage({ action: 'pause' });
-      // State will be set to 'paused' when worker responds
     }
 
     function handleStop() {
@@ -508,22 +531,38 @@
         completedPomodoros++;
         totalWorkMs += getWorkMs();
         updateSessionInfo();
+
+        const goal = parseInt($inputGoal.value) || 0;
+        if (goal > 0 && completedPomodoros >= goal) {
+          playBeep(5, 1000);
+          speak('目標達成です。お疲れ様でした。');
+          sendNotification('Goal reached!', completedPomodoros + ' pomodoros completed.');
+          state = 'idle';
+          document.body.className = '';
+          $ring.classList.remove('work', 'break');
+          $ring.style.strokeDashoffset = '0';
+          $phase.className = 'phase-label';
+          $phase.textContent = 'Goal reached!';
+          $time.textContent = formatDuration(totalWorkMs);
+          document.title = 'Goal reached! - Pomodoro';
+          updateButtons();
+          return;
+        }
+
         playBeep(3, 880);
         sendNotification('Focus complete!', 'Time for a break.');
 
-        // Auto-start break
         phase = 'break';
         totalDuration = getBreakMs();
         setPhaseUI('break');
         state = 'running';
         lastAnnouncedMinute = -1;
-        const isLong = totalDuration === (parseInt($inputLong.value) || 15) * 60 * 1000;
-        speak(isLong ? '\u9577\u3044\u4F11\u61A9\u3067\u3059' : '\u4F11\u61A9\u3067\u3059');
+        const breakMin = Math.round(totalDuration / 60000);
+        speak(breakMin + '分の休憩を開始します');
         worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'break' });
         updateButtons();
 
       } else {
-        // Break complete \u2192 auto-start next work session
         playBeep(2, 660);
         sendNotification('Break over!', 'Starting next session.');
 
@@ -533,14 +572,13 @@
         state = 'running';
         lastAnnouncedMinute = -1;
         const minutes = Math.round(totalDuration / 60000);
-        speak('\u4F11\u61A9\u7D42\u4E86\u3002' + minutes + '\u5206\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3092\u958B\u59CB\u3057\u307E\u3059');
+        speak('休憩終了。' + minutes + '分のセッションを開始します');
         lastAnnouncedMinute = 0;
         worker.postMessage({ action: 'start', duration: totalDuration, phaseType: 'work' });
         updateButtons();
       }
     }
 
-    // \u2500\u2500 Keyboard shortcuts \u2500\u2500
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
       if (e.code === 'Space') {
@@ -553,14 +591,15 @@
       }
     });
 
-    // \u2500\u2500 Init \u2500\u2500
     checkNotifPermission();
     $time.textContent = formatTime(getWorkMs());
     updateSessionInfo();
 
-    // Update displayed time when work duration changes
     $inputWork.addEventListener('input', () => {
       if (state === 'idle') $time.textContent = formatTime(getWorkMs());
+    });
+    $inputGoal.addEventListener('input', () => {
+      if (state === 'idle') renderDots();
     });
   </script>
 </body>
