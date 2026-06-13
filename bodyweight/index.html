@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="自重トレーニングの動きを3D人体モデルで360°確認。鍛えている筋肉と鍛え度合いを可視化するトレーニングガイド。" />
+  <meta name="theme-color" content="#12161d" />
+  <title>自重トレーニング 3D ガイド</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header id="app-header">
+    <h1>自重トレ 3D ガイド <span class="sub">Bodyweight 3D Lab</span></h1>
+    <nav class="mode-switch" aria-label="表示モード">
+      <button id="mode-exercise" class="mode-btn active">種目ビュー</button>
+      <button id="mode-heat" class="mode-btn">鍛え度マップ</button>
+    </nav>
+  </header>
+
+  <main id="layout">
+    <aside id="exercise-list" aria-label="種目一覧"></aside>
+
+    <section id="stage">
+      <canvas id="gl"></canvas>
+      <div id="view-hint">ドラッグ: 回転 ／ ホイール・ピンチ: ズーム</div>
+      <div id="playbar">
+        <button id="btn-play" title="再生 / 一時停止">❚❚</button>
+        <label class="ctrl">
+          <span>速度 <b id="speed-label">×1.0</b></span>
+          <input id="speed" type="range" min="0.3" max="2" step="0.1" value="1" />
+        </label>
+        <label class="ctrl grow">
+          <span>フェーズ</span>
+          <input id="scrub" type="range" min="0" max="1000" step="1" value="0" />
+        </label>
+      </div>
+    </section>
+
+    <aside id="panel"></aside>
+  </main>
+
+  <div id="toast" role="status"></div>
+
+  <script src="js/three.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/figure.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

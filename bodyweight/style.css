@@ -1,0 +1,298 @@
+:root {
+  --bg: #12161d;
+  --bg-panel: #1a202b;
+  --bg-panel2: #202836;
+  --line: #2c3547;
+  --text: #e8edf5;
+  --text-dim: #93a0b4;
+  --accent: #ff8a3d;
+  --accent2: #4da3ff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+  overflow: hidden;
+}
+
+#app-header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+#app-header h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.02em; }
+#app-header h1 .sub { font-size: 11px; color: var(--text-dim); font-weight: 400; margin-left: 8px; }
+
+.mode-switch { display: flex; gap: 6px; }
+.mode-btn {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mode-btn.active { background: var(--accent); border-color: var(--accent); color: #1a130c; font-weight: 700; }
+.mode-btn:not(.active):hover { color: var(--text); border-color: var(--text-dim); }
+
+#layout {
+  display: grid;
+  grid-template-columns: 216px 1fr 330px;
+  height: calc(100% - 52px);
+}
+
+/* ---- 種目リスト ---- */
+#exercise-list {
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-panel);
+}
+.ex-btn {
+  text-align: left;
+  border: 1px solid transparent;
+  background: var(--bg-panel2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.ex-btn .jp { display: block; font-size: 13.5px; font-weight: 600; }
+.ex-btn .en { display: block; font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
+.ex-btn:hover { border-color: var(--text-dim); }
+.ex-btn.active { border-color: var(--accent); background: #2a2418; }
+.ex-btn.active .jp { color: var(--accent); }
+body.heat-mode #exercise-list { opacity: 0.35; pointer-events: none; }
+
+/* ---- 3D ステージ ---- */
+#stage { position: relative; min-width: 0; min-height: 0; }
+#gl { width: 100%; height: 100%; display: block; touch-action: none; }
+
+#view-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(18, 22, 29, 0.75);
+  padding: 4px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+#playbar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 24px));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(26, 32, 43, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  backdrop-filter: blur(4px);
+}
+body.heat-mode #playbar { display: none; }
+#btn-play {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #1a130c;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ctrl { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--text-dim); }
+.ctrl.grow { flex: 1; }
+.ctrl input[type="range"] { accent-color: var(--accent); cursor: pointer; }
+#speed { width: 90px; }
+
+/* ---- 右パネル ---- */
+#panel {
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg-panel);
+}
+#panel h2 { font-size: 17px; margin-bottom: 2px; }
+#panel h2 .en { font-size: 11px; color: var(--text-dim); font-weight: 400; margin-left: 6px; }
+#panel .desc { font-size: 12px; color: var(--text-dim); margin: 6px 0 14px; line-height: 1.6; }
+#panel h3 {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  letter-spacing: 0.05em;
+}
+.points { list-style: none; }
+.points li {
+  font-size: 12.5px;
+  line-height: 1.55;
+  padding: 4px 0 4px 18px;
+  position: relative;
+}
+.points li::before { content: "✓"; position: absolute; left: 2px; color: var(--accent); font-size: 11px; }
+
+.muscle-row {
+  display: grid;
+  grid-template-columns: 112px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: default;
+}
+.muscle-row:hover { background: var(--bg-panel2); }
+.muscle-row .bar-track { display: block; height: 7px; background: #11151c; border-radius: 4px; overflow: hidden; }
+.muscle-row .bar { display: block; height: 100%; border-radius: 4px; }
+.muscle-row .pct { text-align: right; color: var(--text-dim); font-size: 11px; }
+
+/* 記録フォーム */
+.log-form { display: flex; align-items: flex-end; gap: 8px; margin-top: 4px; }
+.log-form label { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--text-dim); }
+.log-form input {
+  width: 64px;
+  background: var(--bg-panel2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 14px;
+}
+.log-form .unit { font-size: 11px; color: var(--text-dim); padding-bottom: 9px; }
+#btn-log {
+  margin-left: auto;
+  background: var(--accent2);
+  color: #0c1420;
+  border: none;
+  border-radius: 9px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#btn-log:hover { filter: brightness(1.1); }
+.log-total { font-size: 11.5px; color: var(--text-dim); margin-top: 10px; }
+.log-total b { color: var(--text); }
+
+/* 鍛え度マップパネル */
+.heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  margin: 10px 0 4px;
+}
+.heat-legend .grad {
+  flex: 1;
+  height: 9px;
+  border-radius: 5px;
+  background: linear-gradient(90deg,
+    hsl(215, 75%, 47%), hsl(165, 70%, 45%), hsl(110, 70%, 46%),
+    hsl(55, 80%, 50%), hsl(20, 85%, 52%), hsl(0, 85%, 53%));
+}
+.heat-legend .zero { width: 16px; height: 9px; border-radius: 4px; background: #3c4654; }
+.heat-empty {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.7;
+  background: var(--bg-panel2);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 10px;
+}
+.muscle-row .ago { text-align: right; color: var(--text-dim); font-size: 10px; white-space: nowrap; }
+
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 6px 6px;
+  border-radius: 7px;
+}
+.hist-row:hover { background: var(--bg-panel2); }
+.hist-row .date { color: var(--text-dim); font-size: 11px; width: 44px; flex-shrink: 0; }
+.hist-row .what { flex: 1; }
+.hist-row button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+}
+.hist-row button:hover { color: #ff6b5e; }
+#btn-clear-log {
+  margin-top: 10px;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+#btn-clear-log:hover { border-color: #ff6b5e; color: #ff6b5e; }
+
+/* トースト */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%) translateY(10px);
+  background: #2a3344;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s;
+  z-index: 50;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---- スマホ対応 ---- */
+@media (max-width: 900px) {
+  html, body { overflow: auto; }
+  #layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 52vh auto;
+    height: auto;
+  }
+  #exercise-list {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .ex-btn { flex-shrink: 0; }
+  .ex-btn .en { display: none; }
+  #panel { border-left: none; border-top: 1px solid var(--line); }
+  #app-header h1 .sub { display: none; }
+}
