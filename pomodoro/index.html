@@ -314,7 +314,16 @@
 
     function speak(text) {
       if (!('speechSynthesis' in window)) return;
-      const utter = new SpeechSynthesisUtterance(text);
+      // TTS engines often clip the first fraction of a second of speech after
+      // a silence, which was swallowing the leading minute count. Warm the
+      // audio pipeline with a silent primer, and add a short leading pause so
+      // the first spoken word is always heard in full.
+      const primer = new SpeechSynthesisUtterance('あ');
+      primer.lang = 'ja-JP';
+      primer.volume = 0;
+      speechSynthesis.speak(primer);
+
+      const utter = new SpeechSynthesisUtterance('、' + text);
       utter.lang = 'ja-JP';
       utter.rate = 1.1;
       speechSynthesis.speak(utter);
