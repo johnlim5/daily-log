@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routine, RoutineLog, Tab, Category } from './types';
 import { Button, Input } from './components/ui'; // 仮のUIコンポーネントパス
 import { nanoid } from 'nanoid';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer 
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
 // --- 定数・型定義 ---
@@ -80,6 +80,12 @@ export default function App() {
   const [progressPulse, setProgressPulse] = useState(false);
   const [showCheckPop, setShowCheckPop] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => localStorage.getItem('sound_enabled') !== 'false');
+
+  // Manage
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+  const newItemInputRef = useCallback((node: HTMLInputElement | null) => {
+    if (node) { node.focus(); node.select(); }
+  }, []);
 
   // Analysis
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -311,6 +317,71 @@ export default function App() {
     });
 
     return Object.values(dataMap).sort((a:any, b:any) => a.originalDate - b.originalDate);
+  };
+
+  // --- 連続記録（ストリーク）---
+  const getStreaks = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return selectedAnalysisRoutines.map(routineId => {
+      const routine = routines.find(r => r.id === routineId);
+      if (!routine) return null;
+      const todayDone = logs.some(l =>
+        l.routineId === routineId &&
+        l.timestamp >= today.getTime() &&
+        l.timestamp < today.getTime() + 86400000
+      );
+      let streak = 0;
+      for (let i = todayDone ? 0 : 1; i < 365; i++) {
+        const dayStart = today.getTime() - i * 86400000;
+        const done = logs.some(l => l.routineId === routineId && l.timestamp >= dayStart && l.timestamp < dayStart + 86400000);
+        if (done) streak++;
+        else break;
+      }
+      return { routine, streak };
+    }).filter(Boolean) as { routine: Routine; streak: number }[];
+  }, [selectedAnalysisRoutines, routines, logs]);
+
+  // --- 達成率チャートデータ ---
+  const getCompletionRateData = () => {
+    const now = new Date();
+    const startDate = new Date();
+    if (analysisPeriod === '1W') startDate.setDate(now.getDate() - 7);
+    else if (analysisPeriod === '1M') startDate.setMonth(now.getMonth() - 1);
+    else if (analysisPeriod === '6M') startDate.setMonth(now.getMonth() - 6);
+    else startDate.setFullYear(now.getFullYear() - 1);
+
+    const selected = routines.filter(r => selectedAnalysisRoutines.includes(r.id));
+    if (selected.length === 0) return [];
+
+    const days: { name: string; rate: number }[] = [];
+    const current = new Date(startDate);
+    current.setHours(0, 0, 0, 0);
+    while (current <= now) {
+      const dayStart = current.getTime();
+      const done = selected.filter(r =>
+        logs.some(l => l.routineId === r.id && l.timestamp >= dayStart && l.timestamp < dayStart + 86400000)
+      ).length;
+      days.push({ name: `${current.getMonth() + 1}/${current.getDate()}`, rate: Math.round((done / selected.length) * 100) });
+      current.setDate(current.getDate() + 1);
+    }
+    return days;
+  };
+
+  // --- ヒートマップデータ（直近16週） ---
+  const getHeatmapData = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Array.from({ length: 112 }, (_, i) => {
+      const day = new Date(today.getTime() - (111 - i) * 86400000);
+      const dayStart = day.getTime();
+      const count = logs.filter(l =>
+        selectedAnalysisRoutines.includes(l.routineId) &&
+        l.timestamp >= dayStart &&
+        l.timestamp < dayStart + 86400000
+      ).length;
+      return { date: day, count };
+    });
   };
 
   // --- Keyboard Shortcuts ---
@@ -569,6 +640,13 @@ export default function App() {
                         ({skippedToday.length}件スキップ)
                       </p>
                     )}
+                    {/* ポモドーロへの導線 */}
+                    <a
+                      href="/daily-log/pomodoro/"
+                      className="inline-flex items-center gap-2 mt-6 px-5 py-3 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 font-bold rounded-2xl transition-all text-sm"
+                    >
+                      🍅 ポモドーロタイマーへ
+                    </a>
                   </div>
                 )}
 
@@ -669,7 +747,14 @@ export default function App() {
                   // UI変更: p-3 -> p-2, text-base -> text-sm
                   <div key={r.id} onClick={() => setFocusIndex(i)} className={`p-2 pl-4 flex items-center gap-3 transition-colors hover:bg-slate-50 ${focusIndex === i ? 'bg-slate-50 border-l-4 border-slate-900' : 'pl-5'}`}>
                     <button onClick={() => { setFocusIndex(i); setIsEmojiPickerOpen(true); }} className="text-xl min-w-[32px] hover:scale-110 transition-transform">{r.emoji}</button>
-                    <input className="flex-1 font-bold text-sm text-slate-700 bg-transparent border-none focus:ring-0 p-0" value={r.title} onChange={(e) => { const updated = routines.map((ru) => ru.id === r.id ? { ...ru, title: e.target.value } : ru); setRoutines(updated); }} onBlur={() => sync('save', { r: routines, l: logs })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+                    <input
+                      ref={r.id === newlyAddedId ? newItemInputRef : undefined}
+                      className="flex-1 font-bold text-sm text-slate-700 bg-transparent border-none focus:ring-0 p-0"
+                      value={r.title}
+                      onChange={(e) => { const updated = routines.map((ru) => ru.id === r.id ? { ...ru, title: e.target.value } : ru); setRoutines(updated); }}
+                      onBlur={() => { setNewlyAddedId(null); sync('save', { r: routines, l: logs }); }}
+                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    />
                     
                     <button onClick={(e) => { e.stopPropagation(); suggestEmoji(r.id); }} disabled={!!isGeneratingEmoji} className="p-2 relative">
                       {isGeneratingEmoji === r.id ? (
@@ -697,12 +782,13 @@ export default function App() {
                   </div>
                   {/* 右端：追加ボタン */}
                   <div className="flex-1 flex justify-end">
-                    <button className="flex items-center gap-2 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 px-4 py-3 rounded-lg transition-colors shadow-lg" onClick={() => { 
-                      const nr = { id: nanoid(), title: '新しい習慣', emoji: '✨', color: '', order: routines.length, category: categoryTab }; 
+                    <button className="flex items-center gap-2 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 px-4 py-3 rounded-lg transition-colors shadow-lg" onClick={() => {
+                      const nr = { id: nanoid(), title: '新しい習慣', emoji: '✨', color: '', order: routines.length, category: categoryTab };
                       const updatedRoutines = [...routines, nr];
-                      setRoutines(updatedRoutines); 
+                      setRoutines(updatedRoutines);
+                      setNewlyAddedId(nr.id);
                       setFocusIndex(updatedRoutines.filter(r => (r.category || 'Morning') === categoryTab).length - 1);
-                      sync('save', { r: updatedRoutines, l: logs }); 
+                      sync('save', { r: updatedRoutines, l: logs });
                     }}>
                       <span>＋ 追加</span>
                     </button>
@@ -784,6 +870,79 @@ export default function App() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
+
+                {/* 連続記録（ストリーク） */}
+                {getStreaks.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">🔥 連続記録</h3>
+                    <div className="flex flex-wrap gap-3">
+                      {getStreaks.map(({ routine, streak }) => (
+                        <div key={routine.id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                          <span className="text-2xl">{routine.emoji}</span>
+                          <div>
+                            <div className="text-xs text-slate-400 font-bold truncate max-w-[100px]">{routine.title}</div>
+                            <div className="text-xl font-bold text-slate-800 leading-tight">
+                              {streak}<span className="text-xs text-slate-400 ml-1">日</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 達成率チャート */}
+                {selectedAnalysisRoutines.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">📊 達成率</h3>
+                    <div className="h-44 w-full">
+                      <ResponsiveContainer>
+                        <BarChart data={getCompletionRateData()} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                          <CartesianGrid stroke="#f1f5f9" vertical={false} />
+                          <XAxis dataKey="name" fontSize={9} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                          <YAxis domain={[0, 100]} fontSize={9} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} width={30} />
+                          <RechartsTooltip formatter={(v: number) => [`${v}%`, '達成率']} labelStyle={{ fontSize: '12px' }} />
+                          <Bar dataKey="rate" fill="#1e293b" radius={[3, 3, 0, 0]} maxBarSize={24} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
+                {/* アクティビティ ヒートマップ（直近16週） */}
+                {selectedAnalysisRoutines.length > 0 && (() => {
+                  const cells = getHeatmapData();
+                  const maxCount = Math.max(...cells.map(c => c.count), 1);
+                  const weeks: typeof cells[] = [];
+                  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+                  const intensityColors = ['bg-slate-100', 'bg-slate-300', 'bg-slate-500', 'bg-slate-700', 'bg-slate-900'];
+                  return (
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">📅 アクティビティ（16週）</h3>
+                      <div className="flex gap-1 overflow-x-auto pb-1">
+                        {weeks.map((week, wi) => (
+                          <div key={wi} className="flex flex-col gap-1">
+                            {week.map((cell, di) => {
+                              const intensity = cell.count === 0 ? 0 : Math.ceil((cell.count / maxCount) * 4);
+                              return (
+                                <div
+                                  key={di}
+                                  className={`w-3 h-3 rounded-sm ${intensityColors[intensity]} transition-colors`}
+                                  title={`${cell.date.getMonth() + 1}/${cell.date.getDate()} — ${cell.count}件`}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1 mt-2 justify-end">
+                        <span className="text-[10px] text-slate-400">少</span>
+                        {intensityColors.map((c, i) => <div key={i} className={`w-2.5 h-2.5 rounded-sm ${c}`} />)}
+                        <span className="text-[10px] text-slate-400">多</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* AI Analysis */}
                 <Button className="w-full h-12 bg-slate-900 text-white rounded-lg font-bold shadow-lg shadow-slate-200" onClick={async()=>{
